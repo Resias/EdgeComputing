@@ -2,6 +2,8 @@ import threading
 import requests
 import struct
 import time
+import queue
+
 
 import cv2
 import numpy as np
@@ -25,12 +27,6 @@ def get_label_name(classid: int):
         return "Person"
     else:
         return "No Person"
-
-# 경고문 매핑
-WARNING_TEXT = {
-    "Person": "현재 이용중인 강의실입니다.",
-    "No Person": "강의실이 비어있습니다."
-}
 
 # ======================================
 # AI 메타데이터 파싱 함수 (JPEG 바이트에서)
@@ -102,14 +98,32 @@ def fetch_jpeg_bytes(ip: str, user: str = "root", password: str = "root", timeou
         print(f"[EXCEPTION] Failed to fetch JPEG: {e}")
         return None
 
+
+
+
+def get_human() -> int:
+    """
+    HTTP 스냅샷에서 AI 메타데이터를 파싱하고,
+    classid == 15 (Person)인 객체 개수를 반환
+    """
+    jpeg = fetch_jpeg_bytes(CAM_IP)
+    if not jpeg:
+        return 0
+    objs = get_ai_info_from_bytes(jpeg)
+    count = sum(1 for obj in objs if obj['classid'] == 15)
+    return count
+
+
+
 # ======================================
 # RTSP 스트리밍 전용 스레드
 # ======================================
 
+
 class StreamThread(threading.Thread):
-    def __init__(self, update_callback):
+    def __init__(self, frame_queue: queue.Queue):
         super().__init__()
-        self.update_callback = update_callback  # PIL 이미지를 GUI에 표시할 콜백
+        self.frame_queue = frame_queue
         self.running = False
         self.cap = None
 
@@ -125,59 +139,63 @@ class StreamThread(threading.Thread):
             ret, frame = self.cap.read()
             if not ret or frame is None:
                 # 스트림 읽기에 실패하면 잠시 대기 후 재시도
-                time.sleep(0.05)
+                cv2.waitKey(10)
                 continue
 
             # 2) 1280×640으로 리사이즈 (GUI 상단 영역 크기)
-            display_frame = cv2.resize(frame, (1280, 640), interpolation=cv2.INTER_LANCZOS4)
+            resized = cv2.resize(frame, (640, 720), interpolation=cv2.INTER_LANCZOS4)
 
-            # 3) BGR → RGB → PIL Image 변환
-            img_rgb = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
-            pil_img = Image.fromarray(img_rgb)
-
-            # 4) GUI에 전달하여 video_label 갱신
-            self.update_callback(pil_img)
+            # 3) 프레임 큐에 최신 프레임만 남기도록
+            if not self.frame_queue.empty():
+                try:
+                    # 이전에 남은 프레임은 더 이상 사용하지 않으므로 폐기
+                    self.frame_queue.get_nowait()
+                except queue.Empty:
+                    pass
+            self.frame_queue.put(resized)
 
             # 5) 아주 짧게 대기 (너무 짧으면 CPU 과부하, 길면 화면 끊김)
             time.sleep(0.01)
 
         # 루프 중단 시 RTSP 스트림 해제
+        # 종료 시 자원 해제
         if self.cap:
             self.cap.release()
+
 
 # ======================================
 # 메타데이터 파싱 전용 스레드
 # ======================================
 
-class MetadataThread(threading.Thread):
-    def __init__(self, update_callback):
-        super().__init__()
-        self.update_callback = update_callback  # 경고문 문자열을 GUI에 표시할 콜백
-        self.running = False
+# class MetadataThread(threading.Thread):
+#     def __init__(self, update_callback):
+#         super().__init__()
+#         self.update_callback = update_callback  # 경고문 문자열을 GUI에 표시할 콜백
+#         self.running = False
 
-    def run(self):
-        self.running = True
-        while self.running:
-            # 1) HTTP Snapshot으로 JPEG 바이트 가져오기
-            jpeg_bytes = fetch_jpeg_bytes(CAM_IP)
-            warning_text = ""
-            if jpeg_bytes:
-                # 2) JPEG 바이트에서 AI 메타데이터 파싱
-                objs = get_ai_info_from_bytes(jpeg_bytes)
+#     def run(self):
+#         self.running = True
+#         while self.running:
+#             # 1) HTTP Snapshot으로 JPEG 바이트 가져오기
+#             jpeg_bytes = fetch_jpeg_bytes(CAM_IP)
+#             warning_text = ""
+#             if jpeg_bytes:
+#                 # 2) JPEG 바이트에서 AI 메타데이터 파싱
+#                 objs = get_ai_info_from_bytes(jpeg_bytes)
 
-                # 3) 파싱된 객체 리스트로부터 라벨 모음 생성
-                labels = { get_label_name(obj['classid']) for obj in objs }
+#                 # 3) 파싱된 객체 리스트로부터 라벨 모음 생성
+#                 labels = { get_label_name(obj['classid']) for obj in objs }
 
-                # 4) 각 라벨에 대응하는 한글 경고문 합치기
-                if labels:
-                    messages = [WARNING_TEXT[label] for label in labels if label in WARNING_TEXT]
-                    warning_text = "\n".join(messages)
+#                 # 4) 각 라벨에 대응하는 한글 경고문 합치기
+#                 if labels:
+#                     messages = [WARNING_TEXT[label] for label in labels if label in WARNING_TEXT]
+#                     warning_text = "\n".join(messages)
 
-            # 5) GUI에 경고문 전달 (빈 문자열일 경우 화면에서 사라짐)
-            self.update_callback(warning_text)
+#             # 5) GUI에 경고문 전달 (빈 문자열일 경우 화면에서 사라짐)
+#             self.update_callback(warning_text)
 
-            # 6) 1초 간격으로 반복
-            time.sleep(1.0)
+#             # 6) 1초 간격으로 반복
+#             time.sleep(1.0)
 
 # ======================================
 # Tkinter GUI 설정
@@ -194,40 +212,43 @@ class App:
 
         # (1) 비디오 표시용 Label: 상단 1280×640
         self.video_label = tk.Label(self.root)
-        self.video_label.place(x=0, y=0, width=1280, height=640)
+        self.video_label.place(x=0, y=0, width=640, height=640)
 
-        # (2) 경고문 Label: 비디오 레이블 위에 오버레이 (좌상단 20,20)
-        self.warning_label = tk.Label(
-            self.root,
-            text="",
-            font=("맑은 고딕", 24, "bold"),
-            fg="red"
-            # bg 옵션 제거
-        )
-        self.warning_label.place(x=20, y=20)
-
-        # (3) 버튼 프레임: 하단 y=650 위치
-        btn_frame = tk.Frame(self.root)
-        btn_frame.place(x=20, y=650)
-
-        self.start_btn = tk.Button(btn_frame, text="시작(Start)", width=12, command=self.start_stream)
-        self.start_btn.pack(side=tk.LEFT, padx=5)
-
-        self.stop_btn = tk.Button(btn_frame, text="정지(Stop)", width=12, command=self.stop_stream, state=tk.DISABLED)
-        self.stop_btn.pack(side=tk.LEFT, padx=5)
 
         # 스레드 및 이미지 저장 변수
+        self.frame_queue = queue.Queue(maxsize=1)
         self.stream_thread = None
-        self.meta_thread = None
         self.photo_image = None  # 최신 프레임 저장용
+        
+        # (2) 스트림 업데이트 예약
+        self._schedule_video_update()
+        
+        # (3) 스트리밍 시작 버튼 (테스트용)
+        #    창 좌측 위에 얹어서 누르면 스트리밍이 시작되도록 함
+        btn_frame = tk.Frame(self.root)
+        btn_frame.place(x=10, y=680)  # 창 맨 아래 쪽에 버튼
+        self.start_btn = tk.Button(btn_frame, text="스트림 시작", command=self.start_stream)
+        self.start_btn.pack(side=tk.LEFT)
+        self.stop_btn = tk.Button(btn_frame, text="스트림 중지", command=self.stop_stream, state=tk.DISABLED)
+        self.stop_btn.pack(side=tk.LEFT, padx=5)
 
-    def update_video(self, pil_image):
+
+    def _schedule_video_update(self):
         """
-        StreamThread가 전달한 PIL 이미지를 PhotoImage로 변환 후
-        video_label에 표시.
+        약 30ms마다 큐에서 최신 프레임을 꺼내와 Label에 표시
         """
-        self.photo_image = ImageTk.PhotoImage(image=pil_image)
-        self.video_label.config(image=self.photo_image)
+        try:
+            frame = self.frame_queue.get_nowait()
+        except queue.Empty:
+            frame = None
+
+        if frame is not None:
+            img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            pil_img = Image.fromarray(img_rgb)
+            self.photo_image = ImageTk.PhotoImage(image=pil_img)
+            self.video_label.config(image=self.photo_image)
+
+        self.root.after(30, self._schedule_video_update)
 
     def update_warning(self, text: str):
         """
@@ -238,52 +259,37 @@ class App:
 
     def start_stream(self):
         """
-        StreamThread와 MetadataThread를 생성·시작하고,
-        버튼 상태를 전환합니다.
+        스트리밍 스레드가 실행 중이 아니면 새로 시작합니다.
         """
-        if self.stream_thread and self.stream_thread.is_alive():
+        if self.stream_thread and self.stream_thread.running:
             return
 
-        # ① 스트리밍 스레드
-        self.stream_thread = StreamThread(update_callback=self.update_video)
+        print("[App] 스트리밍 스레드 시작 요청됨.")
+        self.stream_thread = StreamThread(frame_queue=self.frame_queue)
         self.stream_thread.start()
-
-        # ② 메타데이터 파싱 스레드
-        self.meta_thread = MetadataThread(update_callback=self.update_warning)
-        self.meta_thread.start()
-
         self.start_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
 
     def stop_stream(self):
         """
-        실행 중인 두 스레드를 중단하고, 버튼 상태를 원래대로 복원합니다.
+        스트리밍 스레드를 중지하고 버튼 상태를 복원합니다.
         """
-        if self.stream_thread and self.stream_thread.is_alive():
+        if self.stream_thread and self.stream_thread.running:
+            print("[App] 스트리밍 스레드 종료 요청됨.")
             self.stream_thread.running = False
             self.stream_thread.join()
-
-        if self.meta_thread and self.meta_thread.is_alive():
-            self.meta_thread.running = False
-            self.meta_thread.join()
-
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
-        # 경고문 제거
-        self.update_warning("")
+
 
     def on_close(self):
         """
-        창을 닫을 때 두 스레드를 안전히 중단한 뒤 Tkinter 루프 종료.
+        프로그램 종료 시 스트리밍 스레드를 안전히 중단하고 창을 닫습니다.
         """
-        if self.stream_thread and self.stream_thread.is_alive():
+        print("[App] 종료 요청됨. 스레드 정리 중…")
+        if self.stream_thread and self.stream_thread.running:
             self.stream_thread.running = False
             self.stream_thread.join()
-
-        if self.meta_thread and self.meta_thread.is_alive():
-            self.meta_thread.running = False
-            self.meta_thread.join()
-
         self.root.destroy()
 
 # ======================================
