@@ -258,28 +258,28 @@ class App:
         self.photo_image = ImageTk.PhotoImage(image=pil_image)
         self.video_label.config(image=self.photo_image)
 
-        def update_warning(self, text: str, people_count: int):
-            self.warning_label.config(text=text)
+    def update_warning(self, text: str, people_count: int):
+        self.warning_label.config(text=text)
 
-            # 사람 수에 따라 이미지 결정
-            if 20 < people_count < 30:
-                icon_path = "EdgeComputing/icons/cooling_high.png"
-                dynamic_msg = "High occupancy detected. Activating maximum cooling mode (18°C)."
-            elif 10 < people_count <= 20:
-                icon_path = "EdgeComputing/icons/cooling_medium.png"
-                dynamic_msg = "Moderate crowd detected. Cooling adjusted to strong mode (20°C)."
-            else:
-                icon_path = "EdgeComputing/icons/cooling_low.png"
-                dynamic_msg = "No more than 10 people were detected. The air conditioner switches to minimum cooling."
+        # 사람 수에 따라 이미지 결정
+        if 20 < people_count < 30:
+            icon_path = "EdgeComputing/icons/cooling_high.png"
+            dynamic_msg = "High occupancy detected. Activating maximum cooling mode (18°C)."
+        elif 10 < people_count <= 20:
+            icon_path = "EdgeComputing/icons/cooling_medium.png"
+            dynamic_msg = "Moderate crowd detected. Cooling adjusted to strong mode (20°C)."
+        else:
+            icon_path = "EdgeComputing/icons/cooling_low.png"
+            dynamic_msg = "No more than 10 people were detected. The air conditioner switches to minimum cooling."
 
-            # 이미지 불러오기 및 표시
-            try:
-                img = Image.open(icon_path).resize((300, 300))  # 적당한 크기로 조정
-                self.cooling_photo = ImageTk.PhotoImage(img)
-                self.cooling_img_label.config(image=self.cooling_photo)
-                self.warning_label.config(text=f"{text}\n\n{dynamic_msg}")
-            except Exception as e:
-                print(f"[ERROR] 아이콘 로딩 실패: {e}")
+        # 이미지 불러오기 및 표시
+        try:
+            img = Image.open(icon_path).resize((300, 300))  # 적당한 크기로 조정
+            self.cooling_photo = ImageTk.PhotoImage(img)
+            self.cooling_img_label.config(image=self.cooling_photo)
+            self.warning_label.config(text=f"{text}\n\n{dynamic_msg}")
+        except Exception as e:
+            print(f"[ERROR] 아이콘 로딩 실패: {e}")
 
 
     def start_stream(self):
@@ -301,7 +301,7 @@ class App:
         self.start_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
 
-        self.meta_thread = MetadataThread(update_callback=lambda w, c: self.update_warning(w, c))
+        
 
 
     def stop_stream(self):
@@ -319,7 +319,7 @@ class App:
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
         # 경고문 제거
-        self.update_warning("")
+        self.update_warning("", 0)
 
     def on_close(self):
         """
