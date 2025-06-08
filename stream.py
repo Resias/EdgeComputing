@@ -135,8 +135,8 @@ class StreamThread(threading.Thread):
                 time.sleep(0.05)
                 continue
 
-            # 2) 1280×640으로 리사이즈 (GUI 상단 영역 크기)
-            display_frame = cv2.resize(frame, (1280, 640), interpolation=cv2.INTER_LANCZOS4)
+            # 2) 640×640으로 리사이즈 (윈도우 왼쪽 절반 영역)
+            display_frame = cv2.resize(frame, (640, 640), interpolation=cv2.INTER_LANCZOS4)
 
 
 
@@ -212,9 +212,9 @@ class App:
         self.root.resizable(False, False)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
-        # (1) 비디오 표시용 Label: 상단 1280×640
+        # (1) 비디오 표시용 Label: 상단 왼쪽 절반(640×640)
         self.video_label = tk.Label(self.root)
-        self.video_label.place(x=0, y=0, width=1280, height=640)
+        self.video_label.place(x=0, y=0, width=640, height=640)
 
         # (2) 경고문 Label: 비디오 레이블 위에 오버레이 (좌상단 20,20)
         self.warning_label = tk.Label(
