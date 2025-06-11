@@ -220,6 +220,7 @@ class MetadataThread(threading.Thread):
             # 2) 저장된 JPEG에서 AI 정보 파싱
             self.log(f"스냅샷 저장 완료: {fname}", "INFO")
             objs = get_ai_info(fname, self.log)
+            len(objs)
             # for obj in objs:
             #     print(f"classid={obj['classid']}, conf={obj['confidence']}")
 
@@ -311,13 +312,13 @@ class App:
             self.ai_widget.delete('1.0', tk.END)
             cnt = get_human(objs)
             if cnt>0:
-                for i, obj in enumerate(objs):
-                    line = (
-                        f"[{i}] classid={obj['classid']}, confidence={obj['confidence']} | "
-                        f"x={obj['x']} y={obj['y']} w={obj['w']} h={obj['h']}\n"
-                        f"{WARNING_TEXT['Person']}"
-                    )
-                    self.ai_widget.insert(tk.END, line)
+                line = (
+                    # f"\n[{i}] classid={obj['classid']}, confidence={obj['confidence']} | "
+                    # f"x={obj['x']} y={obj['y']} w={obj['w']} h={obj['h']}\n"
+                    f"{WARNING_TEXT['Person']}"
+                    f"\n현재 이용중인 인원: {cnt}"
+                )
+                self.ai_widget.insert(tk.END, line)
                 self.ai_widget.config(state='disabled')
             else:
                 self.ai_widget.insert(tk.END, WARNING_TEXT["No Person"])
@@ -328,7 +329,7 @@ class App:
     def update_icons(self, text: str, people_count: int):
         try:
             # 사람 수에 따라 이미지 결정
-            if 2 < people_count < 3:
+            if 2 < people_count <= 3:
                 icon_path = os.path.join(
                     BASE_DIR, 
                     "icons",               # 실제 icons 폴더가 stream.py 파일과 같은 폴더에 있다면
@@ -342,13 +343,20 @@ class App:
                     "cooling_medium.png"      # 또는 상대경로에 맞춰 조정
                 )
                 dynamic_msg = "Moderate crowd detected. Cooling adjusted to strong mode (20°C)."
-            else:
+            elif people_count == 1:
                 icon_path = os.path.join(
                     BASE_DIR, 
                     "icons",               # 실제 icons 폴더가 stream.py 파일과 같은 폴더에 있다면
                     "cooling_low.png"      # 또는 상대경로에 맞춰 조정
                 )
                 dynamic_msg = "No more than 10 people were detected. The air conditioner switches to minimum cooling."
+            else:
+                icon_path = os.path.join(
+                    BASE_DIR, 
+                    "icons",               # 실제 icons 폴더가 stream.py 파일과 같은 폴더에 있다면
+                    "cooling_zero.png"      # 또는 상대경로에 맞춰 조정
+                )
+                dynamic_msg = "No one in Classroom."
 
             # 이미지 불러오기 및 표시
             try:
@@ -405,7 +413,7 @@ class App:
         # ② 메타데이터 파싱 스레드
         self.meta_thread = MetadataThread(
             update_callback=lambda objs: self.root.after(0, self.on_metadata, objs),
-            interval=30.0,
+            interval=5.0,
             log_callback=self.log
         )
         self.meta_thread.start()
