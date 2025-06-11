@@ -328,14 +328,14 @@ class App:
     def update_icons(self, text: str, people_count: int):
         try:
             # 사람 수에 따라 이미지 결정
-            if 20 < people_count < 30:
+            if 2 < people_count < 3:
                 icon_path = os.path.join(
                     BASE_DIR, 
                     "icons",               # 실제 icons 폴더가 stream.py 파일과 같은 폴더에 있다면
                     "cooling_high.png"      # 또는 상대경로에 맞춰 조정
                 )
                 dynamic_msg = "High occupancy detected. Activating maximum cooling mode (18°C)."
-            elif 10 < people_count <= 20:
+            elif 1 < people_count <= 2:
                 icon_path = os.path.join(
                     BASE_DIR, 
                     "icons",               # 실제 icons 폴더가 stream.py 파일과 같은 폴더에 있다면
